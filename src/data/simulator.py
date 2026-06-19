@@ -77,28 +77,55 @@ def simulate_shwfs_frame(wf_turbulent, pupil_grid, aperture,
 
     return spot_norm, slopes
 
-
+# Help for the poc 
 def generate_training_pair(r0, seed=None, **kwargs):
-    """
-    Generate one complete training pair for the CNN.
-    Called 50,000 times in Day 4 dataset generation.
+    try:
+        import hcipy
+    except ImportError:
+        raise ImportError("Run: pip install hcipy")
 
-    Args:
-        r0   : Fried parameter in metres
-        seed : Random seed
+    if seed is not None:
+        np.random.seed(seed)
 
-    Returns:
-        spot_image : (H, W) uint8  — CNN primary input
-        slopes     : (2*N_sub,) float32 — CNN secondary input
-        phase_nm   : (H, W) float32 — CNN ground truth label
-        r0         : float — turbulence level tag
-    """
-    phase_nm, wf_turb, pupil_grid, aperture = simulate_wavefront_phase(
-        r0=r0, seed=seed, **kwargs
-    )
-    spot_image, slopes = simulate_shwfs_frame(
-        wf_turb, pupil_grid, aperture
-    )
-    return spot_image, slopes, phase_nm, float(r0)
+    pupil_grid = hcipy.make_pupil_grid(GRID_SIZE, D)
+    aperture   = hcipy.circular_aperture(D)(pupil_grid)
+    Cn2        = hcipy.Cn_squared_from_fried_parameter(r0, WAVELENGTH)
+    layer      = hcipy.InfiniteAtmosphericLayer(
+                     pupil_grid, Cn2, L0, [wind_speed, 0], 1)
+
+    phases, spots, slopes_list, times = [], [], [], []
+
+    for i in range(n_frames):
+        t = i * dt_seconds
+        layer.evolve_until(t)
+
+        wf_flat = hcipy.Wavefront(aperture, WAVELENGTH)
+        wf_turb = layer.forward(wf_flat)
+
+        phase_rad = wf_turb.phase.shaped
+        phase_nm  = (phase_rad * (WAVELENGTH * 1e9) / (2 * np.pi)).astype(np.float32)
+        mask      = aperture.shaped > 0.5
+        phase_nm[~mask] = np.nan
+
+        spot, sl = simulate_shwfs_frame(wf_turb, pupil_grid, aperture)
+
+        phases.append(phase_nm)
+        spots.append(spot)
+        slopes_list.append(sl)
+        times.append(t)
+
+    return (np.array(phases),
+            np.array(spots),
+            np.array(slopes_list),
+            np.array(times, dtype=np.float32))
 
 
+if __name__ == '__main__':
+    print("Testing simulator.py...")
+    spot, sl, phase, r0_val = generate_training_pair(r0=0.10, seed=42)
+    print(f"  spot shape   : {spot.shape} dtype={spot.dtype}")
+    print(f"  slopes shape : {sl.shape}")
+    print(f"  phase shape  : {phase.shape}")
+    rms = float(np.nanstd(phase))
+    print(f"  phase RMS    : {rms:.1f}nm")
+    print("   simulator.py OK")
