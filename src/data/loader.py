@@ -55,3 +55,31 @@ def load_shwfs_sequence(bmp_dir,
     return frames, timestamps, metadata
 
 
+def preprocess_frame(frame, normalize=True):
+    
+    # Background subtraction: subtract minimum
+    proc = frame - frame.min()
+
+    # Clip hot pixels (above 99.9th percentile)
+    clip_val = np.percentile(proc, 99.9)
+    proc     = np.clip(proc, 0, clip_val)
+
+    if normalize and proc.max() > 0:
+        proc = proc / proc.max()
+
+    return proc.astype(np.float32)
+
+
+def save_frames_as_bmp(frames, output_dir):
+    os.makedirs(output_dir, exist_ok=True)
+    for i, frame in enumerate(frames):
+        path = os.path.join(output_dir, f'frame_{i:04d}.bmp')
+        cv2.imwrite(path, frame.astype(np.uint8))
+    print(f"  Saved {len(frames)} BMP files to {output_dir}")
+
+
+if __name__ == '__main__':
+    print("loader.py ready")
+    print("Usage:")
+    print("  frames, ts, meta = load_shwfs_sequence('data/raw/isro_bmps/')")
+    print("  When ISRO provides BMP files, just change the path above.")
