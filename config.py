@@ -1,0 +1,10 @@
+# ── Paths ──
+ROOT_DIR         = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR         = os.path.join(ROOT_DIR, 'data')
+RAW_DIR          = os.path.join(DATA_DIR, 'raw')
+PROCESSED_DIR    = os.path.join(DATA_DIR, 'processed')
+CHECKPOINT_DIR   = os.path.join(DATA_DIR, 'checkpoints')
+OUTPUT_DIR       = os.path.join(ROOT_DIR, 'outputs')
+FIGURES_DIR      = os.path.join(OUTPUT_DIR, 'figures')
+RESULTS_DIR      = os.path.join(OUTPUT_DIR, 'results')
+BENCHMARKS_DIR   = os.path.join(OUTPUT_DIR, 'benchmarks')

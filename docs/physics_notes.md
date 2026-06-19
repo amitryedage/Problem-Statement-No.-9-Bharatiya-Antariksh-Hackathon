@@ -10,3 +10,4 @@ D       = telescope/pupil diameter (m)
 λ       = wavelength (m)
 σ²_tilt = variance of tip/tilt Zernike coefficients over time
 ```
+
