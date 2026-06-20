@@ -24,6 +24,35 @@ def compute_tau0_error(tau0_pred, tau0_true):
     return float(abs(tau0_pred - tau0_true) / tau0_true * 100)
 
 
+def benchmark_speed(func, *args, n_runs=50, warmup=5, **kwargs):
+    for _ in range(warmup):
+        func(*args, **kwargs)
+
+    times = []
+    for _ in range(n_runs):
+        t0 = time.perf_counter()
+        func(*args, **kwargs)
+        times.append((time.perf_counter() - t0) * 1000)
+
+    mean_ms = float(np.mean(times))
+    std_ms  = float(np.std(times))
+    fps     = float(1000.0 / mean_ms)
+    passes  = mean_ms < 10.0
+
+    return mean_ms, std_ms, fps, passes
+
+
+def generate_metrics_table(methods, rms_results, strehl_results,
+                            time_results, r0_values):
+    header = f"{'Method':<20} " + " ".join([f"r0={r*100:.0f}cm RMS" for r in r0_values])
+    lines  = [header, "-" * len(header)]
+
+    for m in methods:
+        row = f"{m:<20} "
+        row += " ".join([f"{rms:>12.1f}nm" for rms in rms_results.get(m, [])])
+        lines.append(row)
+
+    return "\n".join(lines)
 
 
 if __name__ == '__main__':
