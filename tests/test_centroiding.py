@@ -22,7 +22,20 @@ def test_centroid_known_position():
     assert abs(cy - 8.0)  < 0.5, f"Expected cy≈8, got {cy}"
     print("   test_centroid_known_position")
 
+def test_slopes_shape():
+    frame = np.random.rand(128, 128).astype(np.float32)
+    ref   = compute_reference_centroids(frame, N_LENSLETS)
+    slopes= extract_slopes_from_frame(frame, ref, N_LENSLETS)
+    assert slopes.shape == (N_SLOPES,), f"Expected ({N_SLOPES},), got {slopes.shape}"
+    print("   test_slopes_shape")
 
+def test_zero_slopes_same_frame():
+    """Same frame as reference should give ~zero slopes"""
+    frame  = np.random.rand(128, 128).astype(np.float32)
+    ref    = compute_reference_centroids(frame, N_LENSLETS)
+    slopes = extract_slopes_from_frame(frame, ref, N_LENSLETS)
+    assert np.allclose(slopes, 0, atol=1e-10), "Slopes should be ~0 for reference frame"
+    print("   test_zero_slopes_same_frame")
 
 if __name__ == '__main__':
     print("Running centroiding tests...")
