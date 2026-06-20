@@ -10,12 +10,19 @@ from config import N_ZERNIKE_MODES, GRID_SIZE, N_LENSLETS, D
 
 
 def get_zernike_basis(n_modes=N_ZERNIKE_MODES, grid_size=GRID_SIZE):
+    import aotools
+    return aotools.zernikeArray(n_modes, grid_size).astype(np.float32)
+
+
+def decompose_into_zernike(phase_map, n_modes=N_ZERNIKE_MODES,
+                            grid_size=GRID_SIZE):
+   
     Z = get_zernike_basis(n_modes, grid_size)
-    Z_flat    = Z.reshape(n_modes, -1)
+    Z_flat = Z.reshape(n_modes, -1)
     phase_flat= phase_map.flatten()
 
     # Mask NaN (outside aperture)
-    valid     = ~np.isnan(phase_flat)
+    valid = ~np.isnan(phase_flat)
     coeffs, _, _, _ = np.linalg.lstsq(
         Z_flat[:, valid].T, phase_flat[valid], rcond=None)
 
@@ -38,6 +45,7 @@ def build_interaction_matrix(n_modes=N_ZERNIKE_MODES,
                               D_aperture=D,
                               grid_size=GRID_SIZE,
                               alpha_tikhonov=0.01):
+    
     import aotools
     n_sub = n_lenslets ** 2
     D_mat = np.zeros((2 * n_sub, n_modes), dtype=np.float64)
@@ -87,4 +95,4 @@ if __name__ == '__main__':
     recon = reconstruct_from_coefficients(coeffs, 64)
     rms   = float(np.sqrt(np.mean((dummy_phase - recon)**2)))
     print(f"  Reconstruction RMS: {rms:.2f}nm")
-    print("   zernike.py OK")
+    print("zernike.py OK")
