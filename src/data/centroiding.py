@@ -3,7 +3,7 @@
 #centroid_com() — finds spot centre using vectorised NumPy 
 #centroid_all_patches() — centroids all 100 patches at once(Recalculate the Final centroid for whole bmp file)
 #compute_reference_centroids() — called once during calibration
-#
+
 import numpy as np
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -30,6 +30,7 @@ def extract_subapertures(frame, n_lenslets=N_LENSLETS):
 
 
 def centroid_com(patch):
+    
     h, w    = patch.shape
     y_grid  = np.arange(h, dtype=np.float32)
     x_grid  = np.arange(w, dtype=np.float32)
@@ -43,6 +44,28 @@ def centroid_com(patch):
 
 
 def centroid_all_patches(patches):
+    
+    centroids = np.zeros((len(patches), 2), dtype=np.float32)
+    for i, patch in enumerate(patches):
+        centroids[i, 0], centroids[i, 1] = centroid_com(patch)
+    return centroids
+
+
+def compute_reference_centroids(flat_frame, n_lenslets=N_LENSLETS):
+    """
+    Compute reference centroid positions from a flat wavefront frame.
+    Called ONCE during calibration before any AO correction.
+
+    In real ISRO setup: observe reference source (flat wavefront).
+    In simulation: use a frame with known flat/minimal turbulence.
+
+    Args:
+        flat_frame : (H, W) — SH-WFS frame with flat wavefront
+        n_lenslets : Lenslets per side
+
+    Returns:
+        reference_centroids : (N_sub, 2) — (cx, cy) per subaperture
+    """
     patches, _, _, _ = extract_subapertures(
         flat_frame.astype(np.float32), n_lenslets)
     return centroid_all_patches(patches)
@@ -52,6 +75,7 @@ def extract_slopes_from_frame(frame, reference_centroids,
                                n_lenslets=N_LENSLETS,
                                focal_length=MLA_FOCAL_LENGTH,
                                pixel_size=PIXEL_SIZE):
+    
     patches, _, _, _ = extract_subapertures(
         frame.astype(np.float32), n_lenslets)
     centroids = centroid_all_patches(patches)
@@ -69,6 +93,16 @@ def extract_slopes_batch(frames, reference_centroids,
                           n_lenslets=N_LENSLETS,
                           focal_length=MLA_FOCAL_LENGTH,
                           pixel_size=PIXEL_SIZE):
+    """
+    Process a batch of frames to slope vectors.
+    Used in Day 5 pipeline for efficient batch inference.
+
+    Args:
+        frames : (N, H, W) float32 array of frames
+
+    Returns:
+        slopes_batch : (N, 2*N_sub) float32
+    """
     N       = len(frames)
     N_sub   = n_lenslets ** 2
     results = np.zeros((N, N_sub * 2), dtype=np.float32)
@@ -89,4 +123,4 @@ if __name__ == '__main__':
     ref = compute_reference_centroids(dummy, 10)
     slopes = extract_slopes_from_frame(dummy, ref, 10)
     print(f"  Slopes shape: {slopes.shape}")
-    print(" centroiding.py OK")
+    print("  centroiding.py OK")
