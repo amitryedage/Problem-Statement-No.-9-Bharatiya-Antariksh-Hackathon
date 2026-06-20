@@ -3,7 +3,7 @@
 #centroid_com() — finds spot centre using vectorised NumPy 
 #centroid_all_patches() — centroids all 100 patches at once(Recalculate the Final centroid for whole bmp file)
 #compute_reference_centroids() — called once during calibration
-#extract_slopes_from_frame() — the full chain: frame → (200,) slope vector
+#
 import numpy as np
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
