@@ -59,3 +59,28 @@ def extract_slopes_from_frame(frame, reference_centroids,
     return np.concatenate([slope_x, slope_y])
 
 
+def extract_slopes_batch(frames, reference_centroids,
+                          n_lenslets=N_LENSLETS,
+                          focal_length=MLA_FOCAL_LENGTH,
+                          pixel_size=PIXEL_SIZE):
+    N       = len(frames)
+    N_sub   = n_lenslets ** 2
+    results = np.zeros((N, N_sub * 2), dtype=np.float32)
+    for i, frame in enumerate(frames):
+        results[i] = extract_slopes_from_frame(
+            frame, reference_centroids,
+            n_lenslets, focal_length, pixel_size)
+    return results
+
+
+if __name__ == '__main__':
+    print("Testing centroiding.py...")
+    dummy = np.random.rand(128, 128).astype(np.float32)
+    patches, ph, pw, _ = extract_subapertures(dummy, 10)
+    print(f"  Patches: {patches.shape}")
+    cx, cy = centroid_com(patches[0])
+    print(f"  Centroid: ({cx:.2f}, {cy:.2f})")
+    ref = compute_reference_centroids(dummy, 10)
+    slopes = extract_slopes_from_frame(dummy, ref, 10)
+    print(f"  Slopes shape: {slopes.shape}")
+    print(" centroiding.py OK")
