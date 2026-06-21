@@ -1,13 +1,16 @@
 """
 PAPER: DuBose et al. (2020) Intensity-Slopes Network
+
 WHY DUAL INPUT:
   slopes alone → miss branch points (curl component of wavefront)
   spot images  → reveal branch points through spot shape/fragmentation
   both together→ reconstructs gradient + curl = full wavefront
+
 ARCHITECTURE:
   CNN branch  : (1,H,W) spot image → (2048,) spatial features
   FC branch   : (200,) slopes      → (256,)  gradient features
   Fusion      : concat(2304,)      → (36,)   Zernike coefficients
+
 CONNECTS TO FINAL:
   Trained in Day 4 → evaluated in Day 5 → deployed in demo
   Exported to ONNX for C++ deployment on ISRO hardware
@@ -202,3 +205,47 @@ def train_isnet(model, train_loader, val_loader,
     return train_losses, val_losses
 
 
+def load_isnet(checkpoint_path, device='cpu',
+               n_slopes=N_SLOPES, n_modes=N_ZERNIKE_MODES):
+    """Load trained ISNet from checkpoint."""
+    model = ISNet(n_slopes=n_slopes, n_modes=n_modes)
+    ckpt  = torch.load(checkpoint_path, map_location=device)
+    model.load_state_dict(ckpt['model_state'])
+    model.eval()
+    print(f"Loaded ISNet: epoch={ckpt.get('epoch','?')} "
+          f"val_loss={ckpt.get('val_loss',0):.4f}")
+    return model
+
+
+def export_to_onnx(model, save_path,
+                   n_slopes=N_SLOPES, grid_size=GRID_SIZE):
+    """
+    Export ISNet to ONNX format for C++ deployment.
+    ONNX Runtime provides C++ backend — satisfies ISRO speed requirement.
+    Typically 3-5x faster than PyTorch CPU inference.
+    """
+    model.eval().cpu()
+    dummy_img = torch.randn(1, 1, grid_size, grid_size)
+    dummy_sl  = torch.randn(1, n_slopes)
+    torch.onnx.export(
+        model, (dummy_img, dummy_sl), save_path,
+        input_names  = ['spot_image', 'slopes'],
+        output_names = ['zernike_coeffs'],
+        dynamic_axes = {'spot_image': {0:'batch'}, 'slopes': {0:'batch'}},
+        opset_version= 17, verbose=False
+    )
+    size_kb = os.path.getsize(save_path) / 1024
+    print(f"ONNX exported: {save_path} ({size_kb:.0f}KB)")
+    return save_path
+
+
+if __name__ == '__main__':
+    print("Testing isnet.py...")
+    model = build_isnet()
+    print(f"  Parameters: {model.count_parameters():,}")
+    spot  = torch.randn(2, 1, 128, 128)
+    sl    = torch.randn(2, 200)
+    out   = model(spot, sl)
+    print(f"  Output shape: {out.shape}")
+    assert out.shape == (2, 36)
+    print("  isnet.py OK")
