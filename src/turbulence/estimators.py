@@ -84,16 +84,20 @@ def estimate_r0_sliding(zernike_series, frame_times,
 def estimate_tau0(slopes_series, dt_seconds, n_avg_subs=10):
     """
     Estimate coherence time tau0 from slope temporal autocorrelation.
+
     Algorithm:
       1. Average autocorrelation across central subapertures
       2. Find first lag where mean_autocorr drops below 1/e
       3. tau0 = that_lag × dt_seconds
+
     Physics: Taylor's frozen turbulence — atmosphere moves as rigid
     screen at wind speed v. tau0 = time for screen to move r0.
+
     Args:
         slopes_series : (T, 2*N_sub) float32 — slope time-series
         dt_seconds    : float — time between frames in seconds
         n_avg_subs    : int — number of subapertures to average over
+
     Returns:
         tau0_ms      : float — coherence time in milliseconds
         tau0_lag     : int   — frame lag at 1/e crossing
@@ -134,9 +138,11 @@ def estimate_wind_speed(r0_metres, tau0_ms):
     """
     Estimate wind speed from r0 and tau0.
     Roddier (1981): tau0 = 0.314 × r0 / v_wind
+
     Args:
         r0_metres : float — Fried parameter in metres
         tau0_ms   : float — coherence time in milliseconds
+
     Returns:
         v_wind_ms : float — wind speed in m/s
     """
@@ -188,4 +194,4 @@ if __name__ == '__main__':
     slopes_ts = np.random.randn(50, 200).astype(np.float32) * 0.001
     tau0_ms, lag, ac = estimate_tau0(slopes_ts, dt_seconds=0.002)
     print(f"  tau0 estimated: {tau0_ms:.2f}ms (lag={lag})")
-    print(" estimators.py OK")
+    print("estimators.py OK")
