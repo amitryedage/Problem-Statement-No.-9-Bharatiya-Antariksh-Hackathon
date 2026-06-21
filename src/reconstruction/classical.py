@@ -11,6 +11,64 @@ from config import N_LENSLETS, N_ZERNIKE_MODES, GRID_SIZE, D, WAVELENGTH
 
 def modal_reconstruct(slopes, D_pinv, grid_size=GRID_SIZE,
                        n_modes=N_ZERNIKE_MODES):
+    """
+    Zernike modal reconstruction.
+    ISRO: "modal methods using orthogonal polynomials"
+
+    Algorithm:
+      coeffs    = D_pinv @ slopes     (one matrix multiply)
+      phase_map = Z_basis @ coeffs    (weighted sum of Zernike modes)
+
+    Limitation: assumes curl(slopes) = 0.
+    Fails at strong turbulence where branch points create curl != 0.
+    Up to 35% of wavefront energy missed at r0=3cm.
+
+    Args:
+        slopes   : (2*N_sub,) float32
+        D_pinv   : (N_modes, 2*N_sub) float32 reconstruction matrix
+        grid_size: output resolution
+        n_modes  : number of Zernike modes
+
+    Returns:
+        phase_map : (H, W) float32 in nm
+        coeffs    : (N_modes,) float32 Zernike coefficients
+    """
+    import aotools
+
+    coeffs    = (D_pinv @ slopes.astype(np.float64)).astype(np.float32)
+    Z_basis   = aotools.zernikeArray(n_modes, grid_size).astype(np.float32)
+    phase_map = np.tensordot(coeffs, Z_basis, axes=[[0], [0]])
+
+    return phase_map.astype(np.float32), coeffs
+
+
+def zonal_reconstruct(slopes, n_lenslets=N_LENSLETS, D_aperture=D):
+    """
+    Zonal wavefront reconstruction using Hudgin geometry.
+    ISRO: "zonal methods"
+
+    Algorithm:
+      Build system of finite difference equations:
+        phi(i,j+1) - phi(i,j) = sx(i,j) * step
+        phi(i+1,j) - phi(i,j) = sy(i,j) * step
+      Solve least-squares → phase at each subaperture centre
+      Returns (N, N) grid of phase values
+
+    Advantages over modal:
+      + No Zernike basis — works on any aperture geometry
+      + Better for irregular or partial apertures
+    Disadvantages:
+      - Noise-sensitive at edges
+      - Less physically interpretable
+
+    Args:
+        slopes     : (2*N_sub,) float32
+        n_lenslets : Lenslets per side
+        D_aperture : Pupil diameter in metres
+
+    Returns:
+        phase_grid : (n_lenslets, n_lenslets) float32 in nm
+    """
     N    = n_lenslets
     step = D_aperture / N
     sx   = slopes[:N*N].reshape(N, N).astype(np.float64)
@@ -55,6 +113,28 @@ def modal_reconstruct(slopes, D_pinv, grid_size=GRID_SIZE,
 
 def direct_integrate(slopes, n_lenslets=N_LENSLETS,
                       D_aperture=D, grid_size=GRID_SIZE):
+    """
+    Direct integration of slope measurements.
+    ISRO: "direct integration"
+
+    Algorithm:
+      1. phi_x(i,j) = cumsum(sx(i,:)) * step   (integrate along rows)
+      2. phi_y(i,j) = cumsum(sy(:,j)) * step   (integrate down columns)
+      3. phase = (phi_x + phi_y) / 2            (average both paths)
+
+    Fastest method — O(N²), no matrix inversion.
+    Used in real-time AO when speed is critical.
+    Weakness: edge noise accumulates along integration path.
+
+    Args:
+        slopes     : (2*N_sub,) float32
+        n_lenslets : Lenslets per side
+        D_aperture : Pupil diameter
+        grid_size  : Output resolution
+
+    Returns:
+        phase_map : (grid_size, grid_size) float32 in nm
+    """
     from PIL import Image
 
     N    = n_lenslets
@@ -77,6 +157,19 @@ def direct_integrate(slopes, n_lenslets=N_LENSLETS,
 def benchmark_all_methods(slopes_list, true_phases_list, D_pinv,
                            n_lenslets=N_LENSLETS, grid_size=GRID_SIZE,
                            n_modes=N_ZERNIKE_MODES):
+    """
+    Benchmark all 3 classical methods.
+    Called in Day 5 to generate proposal Table 1.
+
+    Args:
+        slopes_list      : list of (2*N_sub,) arrays
+        true_phases_list : list of (H, W) ground truth phases
+        D_pinv           : pseudoinverse matrix
+
+    Returns:
+        results : dict keyed by method name
+                  each value: {'rms_nm', 'strehl', 'time_ms'}
+    """
     from PIL import Image
     import time
 
@@ -112,6 +205,17 @@ def benchmark_all_methods(slopes_list, true_phases_list, D_pinv,
 
 
 def compute_slope_curl(slopes, n_lenslets=N_LENSLETS):
+    """
+    Compute curl of slope field — identifies branch point locations.
+
+    Physics: curl(grad(phi)) = 0 for smooth wavefronts.
+    Non-zero curl = phase singularity = branch point.
+    Classical algorithms miss these — CNN detects them from spot images.
+
+    Returns:
+        curl_map : (n_lenslets-1, n_lenslets-1) float32
+                   Non-zero = branch point at that location
+    """
     N  = n_lenslets
     sx = slopes[:N*N].reshape(N, N).astype(np.float64)
     sy = slopes[N*N:].reshape(N, N).astype(np.float64)
@@ -128,12 +232,11 @@ if __name__ == '__main__':
     slopes = np.random.randn(200).astype(np.float32) * 0.001
     D_p    = np.random.randn(36, 200).astype(np.float32) * 0.01
     pm, c  = modal_reconstruct(slopes, D_p, grid_size=64, n_modes=36)
-    print(f"Modal output: {pm.shape}, coeffs: {c.shape}")
+    print(f"  Modal output: {pm.shape}, coeffs: {c.shape}")
     pz     = zonal_reconstruct(slopes, n_lenslets=10)
-    print(f"Zonal output: {pz.shape}")
+    print(f"  Zonal output: {pz.shape}")
     pd     = direct_integrate(slopes, n_lenslets=10, grid_size=64)
-    print(f"Direct output: {pd.shape}")
+    print(f"  Direct output: {pd.shape}")
     curl   = compute_slope_curl(slopes, n_lenslets=10)
-    print(f"Curl map: {curl.shape}")
+    print(f"  Curl map: {curl.shape}")
     print("classical.py OK")
-
