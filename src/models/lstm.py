@@ -170,3 +170,46 @@ def train_lstm(model, X, Y, n_epochs=150, lr=5e-4,
                   f"Train: {loss_tr.item():.6f} | Val: {loss_va:.6f}")
 
     return train_losses, val_losses
+
+def load_lstm(checkpoint_path, device='cpu', **kwargs):
+    """Load trained LSTM from checkpoint."""
+    model = TurbulenceLSTM(**kwargs)
+    ckpt  = torch.load(checkpoint_path, map_location=device)
+    model.load_state_dict(ckpt['model_state'])
+    model.eval()
+    return model
+
+
+def predict_turbulence(model, recent_features_norm,
+                        feat_min, feat_max, device='cpu'):
+    """
+    Predict future turbulence from recent normalised feature sequence.
+
+    Args:
+        model                 : trained TurbulenceLSTM
+        recent_features_norm  : (seq_len, 4) normalised features
+        feat_min, feat_max    : normalisation parameters from training
+
+    Returns:
+        predictions : (pred_horizon, 4) float32 in original units
+    """
+    model.eval()
+    x     = torch.tensor(recent_features_norm[None]).to(device)
+    with torch.no_grad():
+        pred_norm = model(x).cpu().numpy()[0]   # (pred_horizon, 4)
+
+    feat_range  = feat_max - feat_min + 1e-8
+    predictions = pred_norm * feat_range + feat_min
+    return predictions.astype(np.float32)
+
+
+if __name__ == '__main__':
+    print("Testing lstm.py...")
+    model = build_turbulence_lstm(input_dim=4, hidden_dim=64,
+                                   num_layers=2, pred_horizon=5)
+    x   = torch.randn(8, 15, 4)
+    out = model(x)
+    print(f"  Input:  {x.shape}")
+    print(f"  Output: {out.shape}")
+    assert out.shape == (8, 5, 4)
+    print(" lstm.py OK")
