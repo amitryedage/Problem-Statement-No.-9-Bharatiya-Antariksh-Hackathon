@@ -4,21 +4,6 @@ estimate_r0_sliding() — sliding window r₀(t) time-series
 estimate_tau0() — slope temporal autocorrelation at 1/e
 estimate_wind_speed() — from r₀ and τ₀
 compute_tau0_from_formula() — theoretical τ₀ for validation"""
-"""
-PS09 BAH 2026 — Turbulence Parameter Estimators
-Replicated from: notebooks/day3/day3_classical_baselines.py
-
-PURPOSE:
-  ISRO Outputs 3 and 4:
-    Output 3: r0  (Fried parameter) — from Noll (1976) formula
-    Output 4: tau0 (coherence time) — from slope autocorrelation
-
-PHYSICS:
-  r0   : Var(a_tip) = 0.449 × (D/r0)^(5/3) × (λ/2π)²
-  tau0 : lag where slope autocorrelation drops to 1/e
-  wind : v = 0.314 × r0 / tau0
-"""
-
 import numpy as np
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -29,7 +14,7 @@ def estimate_r0(zernike_series, wavelength=WAVELENGTH, D_aperture=D):
     """
     Estimate Fried parameter r0 from temporal variance of Zernike modes.
     Uses Noll (1976) formula for tip (Z2) and tilt (Z3) modes.
-    
+
     Noll formula: Var(a_j) = C_j × (D/r0)^(5/3) × (λ/2π)²
     C2 = C3 = 0.4490 (tip/tilt Noll coefficients)
 
