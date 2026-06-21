@@ -116,4 +116,47 @@ def compute_actuator_map(wavefront_phase_nm, IF_pinv,
     return act_map, act_cmds
 
 
+def compute_correction_quality(wavefront_nm, act_map, IF,
+                                n_actuators_side=8):
+    """
+    Verify actuator map quality: reconstruct what DM surface would look like
+    and compare with target.
 
+    Args:
+        wavefront_nm     : (H, W) original wavefront
+        act_map          : (N_act, N_act) actuator commands
+        IF               : (N_pix², N_act²) influence function
+
+    Returns:
+        corrected_nm : (H, W) residual wavefront after DM correction
+        residual_rms : float — residual RMS in nm (lower = better DM)
+    """
+    n_pix       = int(np.sqrt(IF.shape[0]))
+    act_cmds    = act_map.flatten().astype(np.float64)
+    dm_surface  = (IF.astype(np.float64) @ act_cmds).reshape(n_pix, n_pix)
+
+    phase_flat  = np.nan_to_num(wavefront_nm.copy(), nan=0.0).astype(np.float64)
+    corrected   = (phase_flat + dm_surface).astype(np.float32)
+    valid       = ~np.isnan(wavefront_nm)
+    residual_rms= float(np.sqrt(np.mean(corrected[valid]**2)))
+
+    return corrected, residual_rms
+
+
+if __name__ == '__main__':
+    print("Testing dm_control.py...")
+    print("  Creating synthetic influence function...")
+    IF, IF_pinv = create_synthetic_influence_function(
+        n_actuators_side=8, n_pixels=64, coupling=0.15)
+
+    # Test with random wavefront
+    phase = np.random.randn(64, 64).astype(np.float32) * 100
+    act_map, act_cmds = compute_actuator_map(phase, IF_pinv, 8)
+    print(f"  Actuator map : {act_map.shape}")
+    print(f"  Max stroke   : {np.abs(act_cmds).max():.1f}nm")
+
+    corrected, rms = compute_correction_quality(phase, act_map, IF, 8)
+    print(f"  Input RMS    : {float(np.sqrt(np.mean(phase**2))):.1f}nm")
+    print(f"  Residual RMS : {rms:.1f}nm")
+    print(f"  Correction   : {(1 - rms/float(np.sqrt(np.mean(phase**2))))*100:.0f}%")
+    print("dm_control.py OK")
