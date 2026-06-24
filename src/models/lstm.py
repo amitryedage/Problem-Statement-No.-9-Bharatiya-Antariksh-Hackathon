@@ -3,7 +3,7 @@ PURPOSE:
   Predicts future turbulence parameters (r0, tau0, wind) from history.
   Enables PREDICTIVE AO — pre-position DM before turbulence arrives.
   Eliminates 10-20% Strehl loss from temporal lag.
-PHYSICS BASIS that used to build the lstm network:
+PHYSICS BASIS:
   Taylor's frozen turbulence hypothesis:
     Atmosphere moves as a rigid screen at wind speed v.
     Future wavefront = current wavefront shifted by v × Δt.
@@ -11,6 +11,7 @@ PHYSICS BASIS that used to build the lstm network:
 INPUT : (r0(t-19:t), tau0(t-19:t), vx(t-19:t), vy(t-19:t)) — last 20 frames
 OUTPUT: (r0(t+1:t+5), tau0, vx, vy) — next 5 frames predicted
 """
+
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -18,15 +19,11 @@ import numpy as np
 import os
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
+from torch.utils.data import TensorDataset, DataLoader
 from config import CHECKPOINT_DIR
 
 
 class TurbulenceLSTM(nn.Module):
-    """
-    LSTM-based turbulence parameter predictor.
-    Differentiator:  predictive AO(NO other think about it ).
-    """
-
     def __init__(self, input_dim=4, hidden_dim=128,
                  num_layers=2, pred_horizon=5, dropout=0.2):
         super(TurbulenceLSTM, self).__init__()
@@ -49,12 +46,6 @@ class TurbulenceLSTM(nn.Module):
         )
 
     def forward(self, x):
-        """
-        Args:
-            x : (B, seq_len, input_dim)
-        Returns:
-            pred : (B, pred_horizon, input_dim)
-        """
         out, _      = self.lstm(x)
         last_hidden = out[:, -1, :]
         pred        = self.output_head(last_hidden)
@@ -70,22 +61,6 @@ def build_turbulence_lstm(input_dim=4, hidden_dim=128,
 def prepare_lstm_sequences(r0_series, wind_speed,
                             wavelength=500e-9, D=2.0,
                             seq_len=15, pred_horizon=5):
-    """
-    Build input-output sequence pairs from r0 time-series.
-    Computes 4 features per timestep:
-      r0   : Fried parameter (normalised)
-      tau0 : Coherence time = 0.314 * r0 / v_wind (normalised)
-      vx   : Wind x-component (normalised)
-      vy   : Wind y-component (normalised, 0 if wind is purely horizontal)
-    Uses sliding window to create (X, Y) pairs:
-      X[i] = features[i : i+seq_len]
-      Y[i] = features[i+seq_len : i+seq_len+pred_horizon]
-    Returns:
-        X        : (N, seq_len, 4) float32
-        Y        : (N, pred_horizon, 4) float32
-        feat_min : (4,) normalisation minimum
-        feat_max : (4,) normalisation maximum
-    """
     T        = len(r0_series)
     features = np.zeros((T, 4), dtype=np.float32)
 
@@ -115,18 +90,8 @@ def prepare_lstm_sequences(r0_series, wind_speed,
 
 
 def train_lstm(model, X, Y, n_epochs=150, lr=5e-4,
-               device='cpu', checkpoint_dir=CHECKPOINT_DIR):
-    """
-    Train LSTM on turbulence sequence data.
-    Args:
-        model   : TurbulenceLSTM instance
-        X       : (N, seq_len, 4) float32 input sequences
-        Y       : (N, pred_horizon, 4) float32 target sequences
-        n_epochs: number of training epochs
-        lr      : learning rate
-    Returns:
-        train_losses, val_losses : per-epoch loss lists
-    """
+               batch_size=32, device='cpu',
+               checkpoint_dir=CHECKPOINT_DIR):
     device_obj = torch.device(device)
     model      = model.to(device_obj)
     optimizer  = optim.Adam(model.parameters(), lr=lr)
@@ -134,29 +99,48 @@ def train_lstm(model, X, Y, n_epochs=150, lr=5e-4,
 
     N       = len(X)
     N_train = int(0.8 * N)
-    X_tr    = torch.tensor(X[:N_train]).to(device_obj)
-    Y_tr    = torch.tensor(Y[:N_train]).to(device_obj)
-    X_va    = torch.tensor(X[N_train:]).to(device_obj)
-    Y_va    = torch.tensor(Y[N_train:]).to(device_obj)
+
+    # Build DataLoader for training — data stays on CPU until batch needed
+    train_dataset = TensorDataset(
+        torch.tensor(X[:N_train]),
+        torch.tensor(Y[:N_train])
+    )
+    train_loader  = DataLoader(
+        train_dataset,
+        batch_size=batch_size,
+        shuffle=True,       # shuffle every epoch — better generalisation
+        drop_last=False
+    )
+
+    # Validation stays as tensors — small enough, no OOM risk
+    X_va = torch.tensor(X[N_train:]).to(device_obj)
+    Y_va = torch.tensor(Y[N_train:]).to(device_obj)
 
     train_losses, val_losses = [], []
     os.makedirs(checkpoint_dir, exist_ok=True)
     best_val = float('inf')
 
     for epoch in range(n_epochs):
+        # ── Mini-batch training ──
         model.train()
-        pred_tr = model(X_tr)
-        loss_tr = loss_fn(pred_tr, Y_tr)
-        optimizer.zero_grad()
-        loss_tr.backward()
-        nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-        optimizer.step()
+        epoch_loss = 0.0
+        for X_batch, Y_batch in train_loader:
+            X_batch = X_batch.to(device_obj)
+            Y_batch = Y_batch.to(device_obj)
+            optimizer.zero_grad()
+            loss = loss_fn(model(X_batch), Y_batch)
+            loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+            optimizer.step()
+            epoch_loss += loss.item()
+        epoch_loss /= len(train_loader)
 
+        # ── Validation ──
         model.eval()
         with torch.no_grad():
             loss_va = loss_fn(model(X_va), Y_va).item()
 
-        train_losses.append(loss_tr.item())
+        train_losses.append(epoch_loss)
         val_losses.append(loss_va)
 
         if loss_va < best_val:
@@ -167,9 +151,11 @@ def train_lstm(model, X, Y, n_epochs=150, lr=5e-4,
 
         if (epoch + 1) % 50 == 0:
             print(f"  Epoch {epoch+1:3d}/{n_epochs} | "
-                  f"Train: {loss_tr.item():.6f} | Val: {loss_va:.6f}")
+                  f"Train: {epoch_loss:.6f} | Val: {loss_va:.6f} | "
+                  f"Best: {best_val:.6f}")
 
     return train_losses, val_losses
+
 
 def load_lstm(checkpoint_path, device='cpu', **kwargs):
     """Load trained LSTM from checkpoint."""
@@ -182,17 +168,6 @@ def load_lstm(checkpoint_path, device='cpu', **kwargs):
 
 def predict_turbulence(model, recent_features_norm,
                         feat_min, feat_max, device='cpu'):
-    """
-    Predict future turbulence from recent normalised feature sequence.
-
-    Args:
-        model                 : trained TurbulenceLSTM
-        recent_features_norm  : (seq_len, 4) normalised features
-        feat_min, feat_max    : normalisation parameters from training
-
-    Returns:
-        predictions : (pred_horizon, 4) float32 in original units
-    """
     model.eval()
     x     = torch.tensor(recent_features_norm[None]).to(device)
     with torch.no_grad():
@@ -212,4 +187,4 @@ if __name__ == '__main__':
     print(f"  Input:  {x.shape}")
     print(f"  Output: {out.shape}")
     assert out.shape == (8, 5, 4)
-    print(" lstm.py OK")
+    print("lstm.py OK")
