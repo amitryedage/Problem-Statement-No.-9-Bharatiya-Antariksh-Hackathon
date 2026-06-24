@@ -1,9 +1,14 @@
-"""estimators.py — Was a stub. Now fully implemented with 5 functions:
-estimate_r0() — Noll 1976 formula from tip/tilt Zernike variance
-estimate_r0_sliding() — sliding window r₀(t) time-series
-estimate_tau0() — slope temporal autocorrelation at 1/e
-estimate_wind_speed() — from r₀ and τ₀
-compute_tau0_from_formula() — theoretical τ₀ for validation"""
+"""
+PURPOSE:
+  ISRO Outputs 3 and 4:
+    Output 3: r0  (Fried parameter) — from Noll (1976) formula
+    Output 4: tau0 (coherence time) — from slope autocorrelation
+PHYSICS:
+  r0   : Var(a_tip) = 0.449 × (D/r0)^(5/3) × (λ/2π)²
+  tau0 : lag where slope autocorrelation drops to 1/e
+  wind : v = 0.314 × r0 / tau0
+"""
+
 import numpy as np
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -54,19 +59,6 @@ def estimate_r0(zernike_series, wavelength=WAVELENGTH, D_aperture=D):
 def estimate_r0_sliding(zernike_series, frame_times,
                          window_frames=10, wavelength=WAVELENGTH,
                          D_aperture=D):
-    """
-    Estimate r0 as a time-series using a sliding window.
-    Produces r0(t) — how turbulence strength varies over time.
-
-    Args:
-        zernike_series : (T, N_modes) — Zernike time-series
-        frame_times    : (T,) — timestamps in seconds
-        window_frames  : frames per estimation window
-
-    Returns:
-        r0_series   : (T_windows,) — r0 estimates in metres
-        t_midpoints : (T_windows,) — window centre timestamps
-    """
     T         = len(zernike_series)
     r0_list   = []
     t_list    = []
@@ -122,14 +114,20 @@ def estimate_tau0(slopes_series, dt_seconds, n_avg_subs=10):
         ac_norm = ac / (ac[0] + 1e-14)
         autocorrs.append(ac_norm)
 
+    # BUG-06 FIX (part 1 of 2): if no valid subapertures found,
+    # return sentinel -1.0 instead of nan so callers can detect
+    # the failure cleanly without nan propagating silently downstream.
     if len(autocorrs) == 0:
-        return float('nan'), -1, np.array([])
+        return -1.0, -1, np.array([])
 
     mean_ac   = np.mean(autocorrs, axis=0)
     threshold = 1.0 / np.e
     crossings = np.where(mean_ac < threshold)[0]
-    tau0_lag  = int(crossings[0]) if len(crossings) > 0 else T - 1
-    tau0_ms   = float(tau0_lag * dt_seconds * 1000)
+    if len(crossings) == 0:
+        return -1.0, T - 1, mean_ac.astype(np.float32)
+
+    tau0_lag = int(crossings[0])
+    tau0_ms  = float(tau0_lag * dt_seconds * 1000)
 
     return tau0_ms, tau0_lag, mean_ac.astype(np.float32)
 
@@ -153,13 +151,6 @@ def estimate_wind_speed(r0_metres, tau0_ms):
 
 
 def compute_tau0_from_formula(r0_metres, wind_speed_ms):
-    """
-    Theoretical tau0 from r0 and wind speed.
-    Used to validate estimate_tau0() results.
-
-    Returns:
-        tau0_ms : float — theoretical coherence time in ms
-    """
     return float(0.314 * r0_metres / wind_speed_ms * 1000)
 
 
@@ -188,10 +179,10 @@ if __name__ == '__main__':
     r0_est = estimate_r0(coeffs, wl, D_ap)
     err    = abs(r0_est - r0_true) / r0_true * 100
     print(f"  r0 true={r0_true*100:.0f}cm | estimated={r0_est*100:.1f}cm | error={err:.1f}%")
-    print(f"  {'OK' if err < 20 else 'NOT OK'} r0 estimation")
+    print(f"  {'OK' if err < 20 else 'Alert'} r0 estimation")
 
     # Test tau0
     slopes_ts = np.random.randn(50, 200).astype(np.float32) * 0.001
     tau0_ms, lag, ac = estimate_tau0(slopes_ts, dt_seconds=0.002)
     print(f"  tau0 estimated: {tau0_ms:.2f}ms (lag={lag})")
-    print("estimators.py OK")
+    print("   estimators.py OK")
