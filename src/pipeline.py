@@ -1,3 +1,17 @@
+"""
+ALL 5 ISRO OUTPUTS PRODUCED:
+    results['phase_maps']      # W(xi,yi) per frame        [Output 1]
+    results['zernike_coeffs']  # Zernike coeffs per frame  [Output 2]
+    results['r0_cm']           # Fried parameter (cm)      [Output 3]
+    results['tau0_ms']         # Coherence time (ms)       [Output 4]
+    results['actuator_maps']   # A(xi,yi) per frame        [Output 5]
+    results['timing']          # Per-module timing (ms)    [V3 benchmark]
+    results['wind_speed_ms']   # Wind speed (m/s)          [bonus]
+    results['r0_series']       # r0 per sliding window     [bonus]
+
+SPEED: < 10ms per frame total
+"""
+
 import numpy as np
 import time
 import os
@@ -37,6 +51,14 @@ class PS09Pipeline:
 
     def __init__(self, model=None, IF_pinv=None, D_pinv=None,
                  reference_centroids=None, device='cpu'):
+        """
+        Args:
+            model                : Trained ISNet (or None for classical fallback)
+            IF_pinv              : DM influence function pseudoinverse
+            D_pinv               : Interaction matrix pseudoinverse (for modal)
+            reference_centroids  : Flat wavefront calibration centroids
+            device               : 'cuda' or 'cpu'
+        """
         self.model               = model
         self.IF_pinv             = IF_pinv
         self.D_pinv              = D_pinv
@@ -67,33 +89,47 @@ class PS09Pipeline:
             IF, IF_pinv = load_influence_function(if_matrix_path)
             print(f"   DM influence function loaded: {if_matrix_path}")
         else:
+            # BUG-03 FIX: cache the synthetic IF pseudoinverse to disk.
+            # np.linalg.pinv on a (16384 x 64) matrix takes 10-60 seconds.
+            # The result never changes, so compute once and reload every
+            # subsequent run from the cached .npz file (~instantly).
             os.makedirs(checkpoint_dir, exist_ok=True)
             cache_path = os.path.join(checkpoint_dir, 'if_pinv_cache.npz')
             if os.path.exists(cache_path):
                 data    = np.load(cache_path)
                 IF      = data['IF']
                 IF_pinv = data['IF_pinv']
-                print(f"  Synthetic IF loaded from cache: {cache_path}")
+                print(f"   Synthetic IF loaded from cache: {cache_path}")
             else:
-                print("   No DM data provided — computing synthetic Gaussian IF")
+                print("    No DM data provided — computing synthetic Gaussian IF")
                 print("      This runs once and is cached for all future loads.")
                 print("      Replace with ISRO's DM data when available.")
                 IF, IF_pinv = create_synthetic_influence_function(
                     n_actuators_side=8, n_pixels=GRID_SIZE, coupling=0.15)
                 np.savez(cache_path, IF=IF, IF_pinv=IF_pinv)
-                print(f"Synthetic IF cached to: {cache_path}")
+                print(f"   Synthetic IF cached to: {cache_path}")
 
         # Build interaction matrix for modal fallback
         print("  Building interaction matrix...")
         D_mat, D_pinv = build_interaction_matrix(
             N_ZERNIKE_MODES, N_LENSLETS, D, GRID_SIZE)
-        print(f"Interaction matrix: {D_mat.shape}")
+        print(f"  Interaction matrix: {D_mat.shape}")
 
         print("  Pipeline ready.\n")
         return cls(model=model, IF_pinv=IF_pinv, D_pinv=D_pinv,
                    device=device)
 
     def calibrate(self, flat_frame):
+        """
+        Compute reference centroids from a flat wavefront frame.
+        Call ONCE before processing any science frames.
+
+        In ISRO's lab setup: observe reference beam (no turbulence).
+        In simulation: use a frame with known flat wavefront.
+
+        Args:
+            flat_frame : (H, W) flat wavefront SH-WFS frame
+        """
         self.reference_centroids = compute_reference_centroids(
             flat_frame.astype(np.float32), N_LENSLETS)
         print(f"  Calibrated: {N_LENSLETS**2} reference centroids computed")
@@ -203,27 +239,51 @@ class PS09Pipeline:
 
         # ── Step 3: Process all frames ──
         N = meta['n_frames']
-        all_phases    = []
-        all_coeffs    = []
-        all_act_maps  = []
-        all_slopes    = []
-        frame_timings = []
+        all_phases      = []
+        all_coeffs      = []
+        all_act_maps    = []
+        all_slopes      = []
+        frame_timings   = []
+        skipped_frames  = []          # track which frames were bad
+        good_timestamps = []          # timestamps of successfully processed frames only
 
         if verbose:
             print(f"\nProcessing {N} frames...")
 
         for i, frame in enumerate(frames):
-            phase, coeffs, act_map, slopes, ft = self.process_frame(frame)
-            all_phases.append(phase)
-            all_coeffs.append(coeffs)
-            all_act_maps.append(act_map)
-            all_slopes.append(slopes)
-            frame_timings.append(ft)
+            try:
+                phase, coeffs, act_map, slopes, ft = self.process_frame(frame)
+                all_phases.append(phase)
+                all_coeffs.append(coeffs)
+                all_act_maps.append(act_map)
+                all_slopes.append(slopes)
+                frame_timings.append(ft)
+                good_timestamps.append(timestamps[i])
 
-            if verbose and (i+1) % max(1, N//5) == 0:
-                print(f"  Frame {i+1:4d}/{N} | "
-                      f"{ft['total_frame_ms']:.1f}ms | "
-                      f"recon={ft['reconstruct_ms']:.1f}ms")
+                if verbose and (i+1) % max(1, N//5) == 0:
+                    print(f"  Frame {i+1:4d}/{N} | "
+                          f"{ft['total_frame_ms']:.1f}ms | "
+                          f"recon={ft['reconstruct_ms']:.1f}ms")
+
+            except Exception as e:
+                skipped_frames.append(i)
+                print(f"  Alert  Frame {i} skipped — {type(e).__name__}: {e}")
+                continue
+
+        # Warn if too many frames were lost
+        if len(skipped_frames) > 0:
+            pct = 100 * len(skipped_frames) / N
+            print(f"\n  Alert  {len(skipped_frames)}/{N} frames skipped ({pct:.1f}%)")
+            if pct > 20:
+                print(f"  Alert >20% frames skipped — check input BMP quality")
+
+        if len(all_phases) == 0:
+            raise RuntimeError(
+                "All frames failed to process. "
+                "Check BMP directory and frame dimensions.")
+
+        # Use only timestamps of good frames for turbulence estimators
+        timestamps   = np.array(good_timestamps, dtype=np.float64)
 
         all_phases   = np.array(all_phases,   dtype=np.float32)  # (N,H,W)
         all_coeffs   = np.array(all_coeffs,   dtype=np.float32)  # (N,36)
@@ -260,13 +320,14 @@ class PS09Pipeline:
         }
 
         # ── Build results dict ──
+        N_good = len(all_phases)
         results = {
             # ISRO Required Outputs
-            'phase_maps'     : all_phases,        # Output 1: W(xi,yi) per frame
-            'zernike_coeffs' : all_coeffs,        # Output 2: coefficients per frame
+            'phase_maps'     : all_phases,            # Output 1: W(xi,yi) per frame
+            'zernike_coeffs' : all_coeffs,            # Output 2: coefficients per frame
             'r0_cm'          : float(r0_val * 100),   # Output 3: Fried parameter
-            'tau0_ms'        : float(tau0_ms),    # Output 4: Coherence time
-            'actuator_maps'  : all_act_maps,      # Output 5: A(xi,yi) per frame
+            'tau0_ms'        : float(tau0_ms),        # Output 4: Coherence time
+            'actuator_maps'  : all_act_maps,          # Output 5: A(xi,yi) per frame
 
             # Bonus outputs
             'r0_series_cm'   : r0_series_out * 100,
@@ -275,7 +336,9 @@ class PS09Pipeline:
             'autocorrelation': autocorr,
 
             # Metadata
-            'n_frames'       : N,
+            'n_frames'       : N_good,
+            'n_frames_total' : N,
+            'skipped_frames' : skipped_frames,
             'timing'         : timing_summary,
             'meta'           : meta,
         }
@@ -292,7 +355,9 @@ class PS09Pipeline:
         print("=" * 55)
         print("PS09 PIPELINE — RESULTS SUMMARY")
         print("=" * 55)
-        print(f"Frames processed   : {results['n_frames']}")
+        print(f"Frames processed   : {results['n_frames']} / {results['n_frames_total']}"
+              + (f"  ({len(results['skipped_frames'])} skipped)"
+                 if results['skipped_frames'] else "  (all good )"))
         print()
         print("ISRO Required Outputs:")
         print(f"  Output 1: Phase maps    → {results['phase_maps'].shape}")
@@ -306,16 +371,11 @@ class PS09Pipeline:
         print(f"  Reconstruction     : {t['reconstruct_ms']:.2f}ms")
         print(f"  Actuator map       : {t['actuator_ms']:.2f}ms")
         print(f"  Per-frame total    : {t['per_frame_ms']:.2f}ms")
-        status = "PASS" if t['meets_isro_10ms'] else "FAIL"
+        status = " PASS" if t['meets_isro_10ms'] else "FAIL"
         print(f"  ISRO < 10ms        : {status}")
         print("=" * 55)
 
     def benchmark(self, bmp_dir, n_warmup=5, n_bench=50):
-        """
-        Run speed benchmark on BMP directory.
-        Reports per-module and total timing.
-        Use for ISRO Evaluation Criterion V3.
-        """
         print(f"Running benchmark ({n_bench} iterations)...")
         results = self.run(bmp_dir, verbose=False)
         t = results['timing']
@@ -328,12 +388,6 @@ class PS09Pipeline:
 
 def run_quick_demo(bmp_dir=None, checkpoint_dir=CHECKPOINT_DIR,
                    device='cpu', verbose=True):
-    """
-    Quick demo: load pipeline and run on BMP folder.
-    Called from Streamlit demo app on finale day.
-
-    If bmp_dir is None: generates synthetic BMP frames for testing.
-    """
     import tempfile, cv2
     from src.data.simulator import simulate_shwfs_frame, simulate_wavefront_phase
 
