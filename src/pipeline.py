@@ -1,21 +1,3 @@
-"""
-USAGE (on ISRO's real BMP data):
-    from src.pipeline import PS09Pipeline
-    pipeline = PS09Pipeline.load('data/checkpoints/')
-    results  = pipeline.run('data/raw/isro_bmps/')
-ALL 5 ISRO OUTPUTS PRODUCED:
-    results['phase_maps']      # W(xi,yi) per frame        [Output 1]
-    results['zernike_coeffs']  # Zernike coeffs per frame  [Output 2]
-    results['r0_cm']           # Fried parameter (cm)      [Output 3]
-    results['tau0_ms']         # Coherence time (ms)       [Output 4]
-    results['actuator_maps']   # A(xi,yi) per frame        [Output 5]
-    results['timing']          # Per-module timing (ms)    [benchmark]
-    results['wind_speed_ms']   # Wind speed (m/s)          [bonus]
-    results['r0_series']       # r0 per sliding window     [bonus]
-
-SPEED: < 10ms per frame total (ISRO Evaluation Criterion )
-"""
-
 import numpy as np
 import time
 import os
@@ -45,6 +27,14 @@ from src.utils.metrics import compute_rms, compute_strehl, benchmark_speed
 
 
 class PS09Pipeline:
+    """
+    Complete PS09 inference pipeline.
+    Integrates all modules: loader → centroiding → ISNet → turbulence → actuator.
+
+    Designed to run on ISRO's BMP data with one method call.
+    Produces all 5 required outputs + timing benchmarks.
+    """
+
     def __init__(self, model=None, IF_pinv=None, D_pinv=None,
                  reference_centroids=None, device='cpu'):
         self.model               = model
@@ -65,22 +55,33 @@ class PS09Pipeline:
         if os.path.exists(model_path):
             model = load_isnet(model_path, device=device)
             model = model.to(torch.device(device))
-            print(f"ISNet loaded: {model_path}")
+            print(f"   ISNet loaded: {model_path}")
         else:
             model = None
-            print(f"ISNet checkpoint not found at {model_path}")
-            print(f"Will use modal reconstruction as fallback")
+            print(f"    ISNet checkpoint not found at {model_path}")
+            print(f"      Will use modal reconstruction as fallback")
 
         # Load DM influence function
         if if_matrix_path and os.path.exists(if_matrix_path):
             from src.actuator.dm_control import load_influence_function
             IF, IF_pinv = load_influence_function(if_matrix_path)
-            print(f"DM influence function loaded: {if_matrix_path}")
+            print(f"   DM influence function loaded: {if_matrix_path}")
         else:
-            print(" No DM data provided — using synthetic Gaussian IF")
-            #print("Replace with ISRO's DM data when available")
-            IF, IF_pinv = create_synthetic_influence_function(
-                n_actuators_side=8, n_pixels=GRID_SIZE, coupling=0.15)
+            os.makedirs(checkpoint_dir, exist_ok=True)
+            cache_path = os.path.join(checkpoint_dir, 'if_pinv_cache.npz')
+            if os.path.exists(cache_path):
+                data    = np.load(cache_path)
+                IF      = data['IF']
+                IF_pinv = data['IF_pinv']
+                print(f"  Synthetic IF loaded from cache: {cache_path}")
+            else:
+                print("   No DM data provided — computing synthetic Gaussian IF")
+                print("      This runs once and is cached for all future loads.")
+                print("      Replace with ISRO's DM data when available.")
+                IF, IF_pinv = create_synthetic_influence_function(
+                    n_actuators_side=8, n_pixels=GRID_SIZE, coupling=0.15)
+                np.savez(cache_path, IF=IF, IF_pinv=IF_pinv)
+                print(f"Synthetic IF cached to: {cache_path}")
 
         # Build interaction matrix for modal fallback
         print("  Building interaction matrix...")
@@ -88,7 +89,7 @@ class PS09Pipeline:
             N_ZERNIKE_MODES, N_LENSLETS, D, GRID_SIZE)
         print(f"Interaction matrix: {D_mat.shape}")
 
-        print("Pipeline ready.\n")
+        print("  Pipeline ready.\n")
         return cls(model=model, IF_pinv=IF_pinv, D_pinv=D_pinv,
                    device=device)
 
@@ -105,6 +106,12 @@ class PS09Pipeline:
         return self._Z_basis
 
     def process_frame(self, frame):
+        """
+        Process one BMP frame through complete pipeline.
+        Returns: phase_map, zernike_coeffs, actuator_map, slopes
+
+        Target: < 8ms per frame (leaves margin for data I/O)
+        """
         t_frame = time.perf_counter()
         timing  = {}
 
@@ -138,7 +145,6 @@ class PS09Pipeline:
         Z_basis = self._get_zernike_basis()
 
         if self.model is not None:
-            # ISNet dual-input CNN
             spot_norm = frame_f / 255.0
             spot_t    = torch.tensor(
                 spot_norm[None, None].astype(np.float32)).to(self.device)
@@ -301,7 +307,7 @@ class PS09Pipeline:
         print(f"  Actuator map       : {t['actuator_ms']:.2f}ms")
         print(f"  Per-frame total    : {t['per_frame_ms']:.2f}ms")
         status = "PASS" if t['meets_isro_10ms'] else "FAIL"
-        print(f" Target execution time      : {status}")
+        print(f"  ISRO < 10ms        : {status}")
         print("=" * 55)
 
     def benchmark(self, bmp_dir, n_warmup=5, n_bench=50):
@@ -353,7 +359,7 @@ if __name__ == '__main__':
     print("Testing pipeline.py...")
     print("Running quick demo with synthetic BMP frames...")
     results, pipeline = run_quick_demo(verbose=True)
-    print(f"\n pipeline.py working")
+    print(f"\npipeline.py working")
     print(f"   r0={results['r0_cm']:.1f}cm | "
           f"tau0={results['tau0_ms']:.2f}ms | "
           f"speed={results['timing']['per_frame_ms']:.1f}ms/frame")
