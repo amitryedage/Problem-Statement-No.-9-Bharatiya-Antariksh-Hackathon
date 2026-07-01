@@ -7,7 +7,7 @@
 
 ---
 
-## 1. The Problem, In Plain Terms
+## 1. The Problem.
 
 A ground telescope looking through the atmosphere sees a blurred image because turbulent air constantly distorts incoming starlight. A Shack-Hartmann Wavefront Sensor (SH-WFS) measures that distortion using a microlens array (MLA) that splits the incoming beam into ~100 spots on a camera; how those spots shift tells you the shape of the distorted wavefront.
 
@@ -15,7 +15,7 @@ The job of this project is to take a stream of SH-WFS camera frames and, in real
 
 ---
 
-## 2. Core Idea (from the pitch)
+## 2. Core Idea.
 
 > "We reconstruct the wavefront using **ISNet** — a dual-input CNN that reads both the SH-WFS spot image and the slope vector together, enabling it to recover the rotational component of distortion that single-input methods miss. A companion **LSTM** forecasts atmospheric turbulence a few frames ahead, enabling predictive rather than purely reactive correction."
 
@@ -93,7 +93,7 @@ Two ideas carry the whole project:
                         DEFORMABLE MIRROR COMMANDS
 ```
 
-**Speed budget (from architecture slide):** data ingestion ~0.5 ms + centroiding ~0.8 ms + reconstruction (GPU ~2 ms / CPU ~5 ms) → total **< 8–10 ms**, meeting the ISRO V3 speed criterion.
+**Speed budget :** data ingestion ~0.5 ms + centroiding ~0.8 ms + reconstruction (GPU ~2 ms / CPU ~5 ms) → total **< 8–10 ms**, meeting the ISRO V3 speed criterion.
 
 ---
 
@@ -114,7 +114,7 @@ Two ideas carry the whole project:
 
 ---
 
-## 5. ISNet — the Reconstruction Model (the actual innovation)
+## 5. ISNet — the Reconstruction Model 
 
 Based on the DuBose et al. (2020) Intensity-Slopes Network concept. Implemented in `src/models/isnet.py`.
 
@@ -247,12 +247,7 @@ I cloned the repo and ran it directly rather than just reading the slides. Here'
 
 **Bottom line:** the physics and model design (ISNet dual-input, LSTM prediction, classical baselines as honest comparison points) are genuinely well thought out and the core reconstruction/estimation code works. What's missing is everything around it — docs, a working demo, dependency pinning, and a couple of empty placeholder files — which is normal for a hackathon-stage project but worth fixing before anyone else tries to run it.
 
----
 
-## 13. Suggested Immediate Fixes (if there's time before judging)
-
-1. Write the actual `README.md` — install steps, how to run `pipeline.py`, how to reproduce a benchmark.
-2. Add a `requirements.txt` (pin: torch, aotools, hcipy, opencv-python, onnx, onnxruntime, scipy, numpy<2.0 if aotools compatibility is an issue).
 3. Either implement `demo/app.py` minimally or drop the Streamlit claim from the pitch until it exists.
 4. Remove `node_modules/`, the bogus `package.json`, and `__pycache__` from version control (add a `.gitignore`).
 5. Make `DEVICE` in `config.py` auto-detect (`'cuda' if torch.cuda.is_available() else 'cpu'`) so it doesn't break on non-GPU judge machines.
