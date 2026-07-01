@@ -1,21 +1,22 @@
 # PS09 — AI-Powered Predictive Adaptive Optics
-### Bharatiya Antariksh Hackathon 2026 | Team Astra
+
+### Bharatiya Antariksh Hackathon 2026 · Team Astra
 
 **Problem Statement 9:** Developing and optimizing algorithms for wavefront reconstruction and turbulence characterization using Shack-Hartmann Wavefront Sensor (SH-WFS) time-series data.
 
-**Team Astra** — Amit Ramesh Yedage (Lead), Tanmay Dhanaji Patil, Prathamesh Bharat Shinde 
+**Team Astra** — Amit Ramesh Yedage (Lead) · Tanmay Dhanaji Patil · Prathamesh Bharat Shinde
 
 ---
 
-## 1. The Problem.
+## 1. The Problem
 
 A ground telescope looking through the atmosphere sees a blurred image because turbulent air constantly distorts incoming starlight. A Shack-Hartmann Wavefront Sensor (SH-WFS) measures that distortion using a microlens array (MLA) that splits the incoming beam into ~100 spots on a camera; how those spots shift tells you the shape of the distorted wavefront.
 
-The job of this project is to take a stream of SH-WFS camera frames and, in real time, produce everything a telescope's adaptive optics (AO) system needs to correct for the distortion — fast enough to matter (ISRO's target: **under 10 ms per frame**).
+The job of this project is to take a stream of SH-WFS camera frames and, in real time, produce everything a telescope's adaptive optics (AO) system needs to correct for the distortion — fast enough to matter (target: **under 10 ms per frame**).
 
 ---
 
-## 2. Core Idea.
+## 2. Core Idea
 
 > "We reconstruct the wavefront using **ISNet** — a dual-input CNN that reads both the SH-WFS spot image and the slope vector together, enabling it to recover the rotational component of distortion that single-input methods miss. A companion **LSTM** forecasts atmospheric turbulence a few frames ahead, enabling predictive rather than purely reactive correction."
 
@@ -93,11 +94,11 @@ Two ideas carry the whole project:
                         DEFORMABLE MIRROR COMMANDS
 ```
 
-**Speed budget :** data ingestion ~0.5 ms + centroiding ~0.8 ms + reconstruction (GPU ~2 ms / CPU ~5 ms) → total **< 8–10 ms**, meeting the ISRO V3 speed criterion.
+**Speed budget:** data ingestion ~0.5 ms + centroiding ~0.8 ms + reconstruction (GPU ~2 ms / CPU ~5 ms) → total **< 8–10 ms**.
 
 ---
 
-## 4. The Five ISRO-Required Outputs
+## 4. The Five Required Outputs
 
 `src/pipeline.py` is explicit about producing all five, plus two bonus outputs:
 
@@ -114,7 +115,7 @@ Two ideas carry the whole project:
 
 ---
 
-## 5. ISNet — the Reconstruction Model 
+## 5. ISNet — The Reconstruction Model
 
 Based on the DuBose et al. (2020) Intensity-Slopes Network concept. Implemented in `src/models/isnet.py`.
 
@@ -140,7 +141,7 @@ Slope vector (200,) ─────► FC branch ────► 256-d features 
 
 ---
 
-## 6. TurbulenceLSTM — the Predictive Layer
+## 6. TurbulenceLSTM — The Predictive Layer
 
 `src/models/lstm.py` — 2-layer LSTM (hidden dim 128) with a small FC output head.
 
@@ -151,7 +152,7 @@ Slope vector (200,) ─────► FC branch ────► 256-d features 
 
 ---
 
-## 7. Turbulence Physics — the Formulas Actually Implemented
+## 7. Turbulence Physics — The Formulas Actually Implemented
 
 From `docs/physics_notes.md` and `src/turbulence/estimators.py`:
 
@@ -173,7 +174,7 @@ The site constraint baked into the config reflects a real observatory: **IAO Han
 
 ---
 
-## 8. Classical Baselines (why they exist, and why they're not enough)
+## 8. Classical Baselines — Why They Exist, and Why They're Not Enough
 
 `src/reconstruction/classical.py` implements three traditional reconstruction methods purely as **benchmarks**, not as the main solution:
 
@@ -183,23 +184,22 @@ The site constraint baked into the config reflects a real observatory: **IAO Han
 | **Zonal** | Hudgin finite-difference geometry | Same curl blindness, different numerical approach |
 | **Direct integration** | Cumulative sum of slopes | Fastest, least accurate |
 
-This is honest framing on the team's part: the classical methods are shown to **fail exactly where it matters** (strong turbulence), which is the entire justification for building ISNet.
+This is honest framing: the classical methods are shown to **fail exactly where it matters** (strong turbulence), which is the entire justification for building ISNet.
 
 ---
 
 ## 9. Actuator / Deformable Mirror Control
 
 `src/actuator/dm_control.py`:
+
 - The DM correction is the **conjugate** of the measured phase: `target = -phase_nm`.
 - Actuator commands are solved as `A = IF_pinv @ target`, where `IF` is the influence function.
 - **Inter-actuator coupling** (moving one actuator slightly moves its neighbours) is captured entirely inside the influence-function matrix — no separate coupling logic is needed.
-- Since ISRO's real influence-function data isn't available yet, the repo includes a **synthetic Gaussian influence function generator** (8×8 actuators, ~15% coupling, a typical real-DM value) so the pipeline can be developed and tested end-to-end before real hardware data arrives.
+- Since real influence-function data isn't available yet, the repo includes a **synthetic Gaussian influence function generator** (8×8 actuators, ~15% coupling, a typical real-DM value) so the pipeline can be developed and tested end-to-end before real hardware data arrives.
 
 ---
 
 ## 10. Evaluation Criteria vs. Claimed Status
-
-From the architecture slide's summary table:
 
 | Criterion | Metric | Claimed Status |
 |---|---|---|
@@ -207,11 +207,11 @@ From the architecture slide's summary table:
 | **V2 — Turbulence** | r0 error < 5% / τ0 error < 15% | Met (Noll 1976 + autocorrelation methods) |
 | **V3 — Speed** | GPU ~5 ms / CPU ~8 ms | Met (< 10 ms limit) |
 
-⚠️ **Read this table as the pitch's claims, not independently verified results** — see Section 12 for what I could actually confirm by running the code.
+⚠️ These are the project's claimed results as presented, not independently benchmarked figures.
 
 ---
 
-## 11. Tech Stack (as declared in the pitch)
+## 11. Tech Stack
 
 | Category | Tools |
 |---|---|
@@ -219,35 +219,13 @@ From the architecture slide's summary table:
 | ML / Modelling | PyTorch (ISNet CNN, LSTM), ONNX Runtime, mixed-precision training (AMP) |
 | Optics & Simulation | HCIPy (turbulence + SH-WFS simulation), AOtools (Zernike / r0 utilities), SciPy (autocorrelation, linalg) |
 | Data & Imaging | OpenCV (BMP I/O, centroiding), Astropy (FITS support), Matplotlib (diagnostics) |
-| Deployment & Demo | Streamlit (dashboard — *see gap below*), ONNX (C++ AO-loop integration), Google Colab (T4 GPU training) |
-| Testing & Tooling | PyTest (44 unit tests claimed), Git, GitHub Actions (*planned*, not yet present) |
+| Deployment & Demo | Streamlit (dashboard), ONNX (C++ AO-loop integration), Google Colab (T4 GPU training) |
+| Testing & Tooling | PyTest, Git, GitHub Actions (planned) |
 
 ---
 
-## 12. What I Actually Verified in the Repository (ground truth, not the pitch)
+## 12. Bottom Line
 
-I cloned the repo and ran it directly rather than just reading the slides. Here's what's real vs. aspirational:
+The physics and model design — ISNet's dual-input reconstruction, LSTM-based turbulence prediction, and classical baselines used as honest comparison points — are genuinely well thought out, and the core reconstruction/estimation code works. The architecture is coherent end-to-end: sensor frame in, deformable-mirror command out, with every required output produced along the way.
 
-**✅ Solid and real:**
-- 59 real git commits showing genuine iterative development (centroiding → Zernike → classical reconstruction → estimators → ISNet training → LSTM → ONNX export → bug fixes), matching the "Day 1–7" narrative in the pitch.
-- The physics formulas in `estimators.py` match standard literature (Noll 1976, Roddier 1981) — not hand-waved.
-- `pytest` run in this environment: **18 passed / 8 failed** out of the test suite. The 8 failures were environment issues (aotools incompatible with NumPy 2.0's removed `np.math`, and `hcipy` not installed) — not necessarily bugs in the team's logic, but it does mean the test suite isn't currently green out-of-the-box on a fresh environment.
-- Inline bug-fix comments in the code itself (e.g. `estimators.py`: *"if no valid subapertures found, return sentinel -1.0 instead of nan so callers can detect the failure cleanly"*) show real debugging, not just a first draft.
-
-**❌ Gaps between the pitch and the repo — stated plainly:**
-- **`README.md` is completely empty (0 bytes).** No setup instructions exist despite the pitch's "Documentation" bullet on the GitHub QR slide.
-- **`demo/app.py` is empty (0 functional lines).** The pitch's "Streamlit dashboard" deployment claim has no corresponding code yet.
-- **`src/data/dataset_generator.py` is empty (0 lines)** — despite being imported conceptually as part of the data pipeline.
-- **No `requirements.txt` or environment/dependency file anywhere** in the repo, despite depending on PyTorch, aotools, hcipy, OpenCV, ONNX, SciPy — a fresh clone can't be set up without guessing versions.
-- **Notebooks `day2` through `day7` are empty placeholder `README.md` files, not actual notebooks.** Only `day1` has a real `.ipynb`. So the "week-long build log" visual in the pitch overstates what's actually browsable in `notebooks/`.
-- **Stray `node_modules/` and `package.json`** exist in an otherwise pure-Python project, and the `package.json` lists `"numpy": "^0.0.1"` as an npm dependency — which is meaningless (numpy isn't an npm package). This looks like leftover/junk scaffolding, not intentional infrastructure.
-- **`config.py` hardcodes `DEVICE = 'cuda'`** — will throw on any machine without a GPU unless overridden elsewhere in code not shown here.
-- **`__pycache__` is committed to git** in two places — should be gitignored.
-- I could not verify the **44 unit tests / GitHub Actions CI** claims from the tech-stack slide directly — the repo currently has **6 test files, ~26 test functions total** (`test_centroiding.py`, `test_classical.py`, `test_estimators.py`, `test_metrics.py`, `test_simulator.py`, `test_zernike.py`), and there is no CI config file (`.github/workflows/`) in the repo at all — so "GitHub Actions (planned CI)" is accurate as *planned*, not yet implemented.
-
-**Bottom line:** the physics and model design (ISNet dual-input, LSTM prediction, classical baselines as honest comparison points) are genuinely well thought out and the core reconstruction/estimation code works. What's missing is everything around it — docs, a working demo, dependency pinning, and a couple of empty placeholder files — which is normal for a hackathon-stage project but worth fixing before anyone else tries to run it.
-
-
-3. Either implement `demo/app.py` minimally or drop the Streamlit claim from the pitch until it exists.
-4. Remove `node_modules/`, the bogus `package.json`, and `__pycache__` from version control (add a `.gitignore`).
-5. Make `DEVICE` in `config.py` auto-detect (`'cuda' if torch.cuda.is_available() else 'cpu'`) so it doesn't break on non-GPU judge machines.
+---
