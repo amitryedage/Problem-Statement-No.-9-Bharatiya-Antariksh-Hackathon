@@ -586,15 +586,9 @@ python -m pytest tests/ -v
 # Expected: 44 passed, 0 failed
 ```
 
-### Train ISNet on Colab T4 GPU
 
-```python
-# Open notebooks/day4/day4_cnn_lstm_training.py in Colab
-# Runtime → Change runtime type → T4 GPU → Run all
-# Dataset generation: ~10 min CPU
-# ISNet training (50 epochs): ~15 min GPU
-# ONNX export + benchmark: ~2 min
-```
+
+
 
 ---
 
