@@ -19,13 +19,6 @@ Sensor (SH-WFS) time-series data.
 
 ---
 
-## 👥 Team Astra
-
-| Role | Name | Responsibility |
-|------|------|----------------|
-| 🧑‍💻 Team Lead | Amit Ramesh Yedage | Architecture · ISNet · Pipeline |
-| 👨‍💻 Member 2 | Tanmay Dhanaji Patil | LSTM · Turbulence estimation |
-| 👨‍💻 Member 3 | Prathamesh Bharat Shinde | Classical baselines · Actuator map |
 
 ---
 
