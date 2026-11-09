@@ -631,6 +631,5 @@ python -m pytest tests/ -v
 
 <div align="center">
 
-*PS09 BAH 2026 · Team Astra · Bharatiya Antariksh Hackathon · ISRO × Hack2Skill*
 
 </div>
