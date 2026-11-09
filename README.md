@@ -407,7 +407,7 @@ graph LR
     end
 
     IFP -->|matrix multiply| A
-    A["A(x,y) µm<br/>actuator stroke map<br/>(8×8) deformable mirror<br/>Output 5 ✅"]
+    A["A(x,y) µm<br/>actuator stroke map<br/>(8×8) deformable mirror<br/>Output 5 "]
 
     style W fill:#1a1f3c,color:#a0c4ff
     style T fill:#3c1a1a,color:#ffa0a0
@@ -439,11 +439,11 @@ Moving actuator A by 1µm also displaces neighbours:
 graph LR
     P["pipeline.run(bmp_dir/)"] --> O1 & O2 & O3 & O4 & O5
 
-    O1["📦 Output 1<br/>phase_maps<br/>(N, H, W) float32<br/>W(x,y) per frame [nm]"]
-    O2["📦 Output 2<br/>zernike_coeffs<br/>(N, 36) float32<br/>â per frame [nm]"]
-    O3["📦 Output 3<br/>r0_cm<br/>float<br/>Fried parameter [cm]"]
-    O4["📦 Output 4<br/>tau0_ms<br/>float<br/>Coherence time [ms]"]
-    O5["📦 Output 5<br/>actuator_maps<br/>(N, 8, 8) float32<br/>A(x,y) per frame [µm]"]
+    O1[" Output 1<br/>phase_maps<br/>(N, H, W) float32<br/>W(x,y) per frame [nm]"]
+    O2[" Output 2<br/>zernike_coeffs<br/>(N, 36) float32<br/>â per frame [nm]"]
+    O3[" Output 3<br/>r0_cm<br/>float<br/>Fried parameter [cm]"]
+    O4[" Output 4<br/>tau0_ms<br/>float<br/>Coherence time [ms]"]
+    O5[" Output 5<br/>actuator_maps<br/>(N, 8, 8) float32<br/>A(x,y) per frame [µm]"]
 
     style O1 fill:#0d3c1f,color:#9fe1cb,stroke:#1D9E75
     style O2 fill:#0d3c1f,color:#9fe1cb,stroke:#1D9E75
@@ -490,15 +490,15 @@ xychart-beta
 
 | Parameter | Method | Error | Target | Status |
 |-----------|--------|-------|--------|--------|
-| r₀ | Noll 1976 variance | < 5% | < 10% | ✅ |
-| τ₀ | Autocorrelation 1/e | < 15% | < 20% | ✅ |
+| r₀ | Noll 1976 variance | < 5% | < 10% | Done |
+| τ₀ | Autocorrelation 1/e | < 15% | < 20% |  Done|
 
 > Results from simulated SH-WFS data (HCIPy, Kolmogorov turbulence).
 > Validation on ISRO's real BMP data will be performed post-selection.
 
 ---
 
-## ⚡ Speed Benchmark
+##  Speed Benchmark
 
 ```mermaid
 gantt
