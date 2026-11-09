@@ -150,34 +150,7 @@ SUBAPERTURE GRID r₀=3cm             WHAT CLASSICAL SEES
 
 Two innovations carried the entire project:
 
-```mermaid
-mindmap
-  root((PS09<br/>Solution))
-    ISNet CNN
-      Dual-input design
-        CNN branch reads spot image
-        FC branch reads slope vector
-        Fusion head → 36 Zernike coeffs
-      Why dual-input?
-        Slopes = gradient only
-        Spot image = gradient + curl
-        Branch points visible in image shape
-      Result
-        75% RMS reduction at r₀=3cm
-        Strehl 0.06 → 0.72
-    LSTM Predictor
-      Predictive AO
-        Forecast r₀ τ₀ wind 5 frames ahead
-        Pre-position DM before wavefront arrives
-        Eliminate temporal lag error
-      Physics basis
-        Taylor frozen turbulence hypothesis
-        Atmosphere = rigid screen at wind speed v
-        φ(x,y,t+Δt) ≈ φ(x-vΔt, y-vΔt, t)
-      Result
-        10-20% additional Strehl recovery
-        No other team implements this
-```
+
 
 ### Speed budget
 
